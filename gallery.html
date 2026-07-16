@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Art Gallery</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; color: #fff; font-family: -apple-system, sans-serif; }
+  header { padding: 2rem; text-align: center; border-bottom: 1px solid #222; }
+  h1 { font-size: 2rem; font-weight: 300; letter-spacing: 0.1em; }
+  h1 span { color: #ff6b6b; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 1rem; padding: 1rem; }
+  .card { position: relative; overflow: hidden; border-radius: 8px; background: #111; border: 1px solid #222; }
+  .card img { width: 100%; display: block; transition: transform 0.3s; }
+  .card:hover img { transform: scale(1.05); }
+  .card .info { padding: 1rem; }
+  .card .prompt { font-size: 0.85rem; color: #aaa; line-height: 1.4; }
+  .card .time { font-size: 0.7rem; color: #555; margin-top: 0.5rem; }
+  .empty { text-align: center; padding: 4rem; color: #333; font-size: 1.2rem; }
+  button { display: block; margin: 2rem auto; padding: 1rem 2rem; background: #ff6b6b; color: #fff; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  button:hover { background: #ff4444; }
+</style>
+</head>
+<body>
+<header><h1>AI <span>Art</span> Gallery</h1></header>
+<div id="gallery" class="grid">
+  <div class="empty">No art yet. Generate some!</div>
+</div>
+<button onclick="location.reload()">Refresh</button>
+<script>
+async function load() {
+  try {
+    // CRITICAL: paths must be root-relative since http.server serves from gallery directory
+    const resp = await fetch('/index.json');
+    const text = await resp.text();
+    const items = text.trim().split('\n').filter(l => l).map(l => JSON.parse(l)).reverse();
+    if (!items.length) return;
+    document.getElementById('gallery').innerHTML = items.map(i => `
+      <div class="card">
+        <img src="/${i.file}" loading="lazy" alt="${i.prompt}">
+        <div class="info">
+          <div class="prompt">${i.prompt}</div>
+          <div class="time">${i.timestamp} · ${i.style}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

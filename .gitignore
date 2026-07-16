@@ -1,0 +1,25 @@
+# Generated images
+*.png
+*.rgb565
+*.jpg
+*.jpeg
+
+# Gallery data
+index.json
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Assets from SD pipeline (downloaded models)
+models/
