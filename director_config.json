@@ -6,12 +6,7 @@
   },
   "servers": [
     {
-      "name": "Local",
-      "base_url": "http://127.0.0.1:8090",
-      "auth_token": ""
-    },
-    {
-      "name": "Tailscale GPU",
+      "name": "GPU",
       "base_url": "http://100.82.167.121:8090",
       "auth_token": ""
     }
