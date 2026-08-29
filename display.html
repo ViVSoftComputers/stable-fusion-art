@@ -7,14 +7,20 @@
 <style>
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
-    background: #000; overflow: hidden; cursor: none;
+    background: #000; overflow: hidden;
     -webkit-user-select: none; user-select: none;
+  }
+  body.hide-cursor {
+    cursor: none;
   }
   /* Two stacked <img> layers crossfade so image swaps never flash white. */
   .layer {
     position: absolute; inset: 0; width: 100%; height: 100%;
-    object-fit: contain; background: #000;
+    object-fit: cover; background: #000;
     transition: opacity 1.2s ease-in-out; opacity: 0;
+  }
+  body.mode-contain .layer {
+    object-fit: contain;
   }
   .layer.visible { opacity: 1; }
   #msg {
@@ -22,25 +28,73 @@
     align-items: center; justify-content: center;
     color: #555; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
     font-size: 20px; text-align: center; padding: 24px;
+    pointer-events: none;
+  }
+  /* Mode toggle overlay hint (fades away on idle) */
+  #fit-hint {
+    position: absolute; bottom: 16px; right: 16px;
+    background: rgba(0,0,0,0.6); color: #aaa;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 12px; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.15);
+    backdrop-filter: blur(4px);
+    transition: opacity 0.4s;
+    pointer-events: none;
+    opacity: 0;
+  }
+  body:not(.hide-cursor) #fit-hint {
+    opacity: 1;
   }
 </style>
 </head>
-<body>
+<body class="hide-cursor">
   <img id="a" class="layer" alt="" draggable="false">
   <img id="b" class="layer" alt="" draggable="false">
   <div id="msg">Loading…</div>
+  <div id="fit-hint">Fill Screen (click to toggle)</div>
 
 <script>
 (function () {
   const imgA = document.getElementById('a');
   const imgB = document.getElementById('b');
   const msg = document.getElementById('msg');
+  const fitHint = document.getElementById('fit-hint');
   const POLL_MS = 20000;        // how often to check for a new image
   const API = '/api/director/latest';
 
   let currentFile = null;        // filename currently displayed
   let active = imgA;             // the layer currently visible
   let fetching = false;
+
+  // Fit mode toggle: cover (fill screen, default) vs contain (letterbox)
+  let fitMode = localStorage.getItem('display_fit_mode') || 'cover';
+  function updateFitMode() {
+    if (fitMode === 'contain') {
+      document.body.classList.add('mode-contain');
+      fitHint.textContent = 'Fit Letterbox (click to fill)';
+    } else {
+      document.body.classList.remove('mode-contain');
+      fitHint.textContent = 'Fill Screen (click to fit)';
+    }
+    localStorage.setItem('display_fit_mode', fitMode);
+  }
+  updateFitMode();
+
+  document.body.addEventListener('click', () => {
+    fitMode = (fitMode === 'cover') ? 'contain' : 'cover';
+    updateFitMode();
+  });
+
+  // Cursor auto-hide on inactivity
+  let cursorTimeout = null;
+  function showCursor() {
+    document.body.classList.remove('hide-cursor');
+    clearTimeout(cursorTimeout);
+    cursorTimeout = setTimeout(() => {
+      document.body.classList.add('hide-cursor');
+    }, 2500);
+  }
+  window.addEventListener('mousemove', showCursor);
 
   function hide(el) { el.classList.remove('visible'); }
   function show(el) { el.classList.add('visible'); }
