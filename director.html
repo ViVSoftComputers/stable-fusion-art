@@ -155,13 +155,27 @@
     position: relative; aspect-ratio: 16/9; overflow: hidden;
     background: var(--bg-elev-2); border: 1px solid var(--border);
     border-radius: 8px; cursor: pointer;
+    transition: transform 0.15s ease, border-color 0.15s ease;
   }
-  .gallery-grid .item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gallery-grid .item:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+  }
+  .gallery-grid .item img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    background: #111;
+    opacity: 0;
+    transition: opacity 0.25s ease-in;
+  }
+  .gallery-grid .item img.loaded {
+    opacity: 1;
+  }
   .gallery-grid .item .tag {
     position: absolute; left: 6px; bottom: 6px;
-    background: rgba(0,0,0,0.6); color: white;
+    background: rgba(0,0,0,0.65); color: white;
     padding: 2px 6px; border-radius: 4px; font-size: 10px;
     backdrop-filter: blur(4px);
+    pointer-events: none;
   }
   .empty {
     padding: 28px; text-align: center; color: var(--text-faint);
@@ -182,7 +196,7 @@
 
   /* Drawer */
   .scrim {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
     z-index: 19; opacity: 0; pointer-events: none; transition: opacity 0.18s;
   }
   .scrim.open { opacity: 1; pointer-events: auto; }
@@ -276,6 +290,7 @@
   <span id="overall-pill" class="pill offline"><span class="swatch"></span><span class="label">—</span></span>
   <span class="muted mono faint" id="uptime-pill">uptime —</span>
   <span class="header-spacer"></span>
+  <a class="btn tiny secondary" href="/display" target="_blank" style="margin-right:4px">📺 Open Kiosk Display</a>
   <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
 </header>
 
@@ -309,7 +324,8 @@
       <span class="faint" id="gallery-source-summary"></span>
     </div>
     <div class="row" style="margin-bottom:10px;gap:8px">
-      <a class="btn tiny secondary" href="/gallery" target="_self" id="fullscreen-link">Open fullscreen viewer</a>
+      <a class="btn tiny secondary" href="/display" target="_blank">Open Kiosk Display (Auto-Crossfade)</a>
+      <a class="btn tiny secondary" href="/gallery" target="_self" id="fullscreen-link">Open Fullscreen Grid</a>
     </div>
     <div class="gallery-grid" id="gallery-grid"></div>
   </section>
@@ -341,19 +357,6 @@
     <h2 style="margin-top:24px">Servers</h2>
     <div id="cfg-servers"></div>
     <button class="btn secondary tiny" id="add-server-btn" style="margin-top:8px">+ Add server</button>
-
-    <h2 style="margin-top:24px">P4 Panel Source</h2>
-    <div class="field">
-      <label>Strategy</label>
-      <select id="cfg-p4-strategy" style="width:100%;padding:8px 10px;background:var(--bg-elev-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;">
-        <option value="freshest">Freshest (server with most gallery items)</option>
-        <option value="fixed">Fixed (use source_server_index below)</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>Source server index (used when strategy=Fixed)</label>
-      <input type="number" id="cfg-p4-index" min="0" step="1">
-    </div>
 
     <h2 style="margin-top:24px">Generation defaults</h2>
     <p class="faint" style="margin-top:0">The director picks a random prompt from this pool and sends it on every <span class="mono">POST /generate</span>.</p>
@@ -422,6 +425,54 @@
     $('toast-host').appendChild(el);
     setTimeout(() => el.remove(), 3500);
   };
+
+  // ---- Fast Client-Side Thumbnail Cache using Canvas ----
+  const thumbCache = new Map();
+  async function getThumbnail(fullUrl) {
+    if (thumbCache.has(fullUrl)) {
+      return thumbCache.get(fullUrl);
+    }
+    const p = new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const targetW = 320;
+          const targetH = Math.round(targetW * (img.naturalHeight / img.naturalWidth)) || 180;
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d', { alpha: false });
+          ctx.imageSmoothingQuality = 'medium';
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          const thumbData = canvas.toDataURL('image/jpeg', 0.72);
+          thumbCache.set(fullUrl, thumbData);
+          resolve(thumbData);
+        } catch (e) {
+          resolve(fullUrl);
+        }
+      };
+      img.onerror = () => resolve(fullUrl);
+      img.src = fullUrl;
+    });
+    thumbCache.set(fullUrl, p);
+    return p;
+  }
+
+  // ---- Intersection Observer for Progressive Thumbnail Loading ----
+  const thumbObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const img = entry.target;
+        observer.unobserve(img);
+        const fullUrl = img.dataset.src;
+        getThumbnail(fullUrl).then(src => {
+          img.src = src;
+          img.classList.add('loaded');
+        });
+      }
+    });
+  }, { rootMargin: '120px 0px' });
 
   // ---- API ----
   async function api(path, opts = {}) {
@@ -496,16 +547,18 @@
         <div class="server">
           <div class="row between">
             <div>
-              <div class="name">${escapeHtml(s.name)}${s.server_name && s.server_name !== s.name ? ' <span class="faint mono">(' + escapeHtml(s.server_name) + ')</span>' : ''}</div>
-              <div class="url mono">${escapeHtml(s.base_url)}</div>
+              <span class="name">${escapeHtml(s.name || 'Server ' + (i + 1))}</span>
+              <span class="pill ${statusClass}" style="margin-left:8px"><span class="swatch"></span>${status}</span>
+              ${busy}
             </div>
-            <span class="pill ${statusClass}"><span class="swatch"></span>${status}</span>
+            <span class="mono faint">${escapeHtml(s.host || '')}</span>
           </div>
+          <div class="url mono faint">${escapeHtml(s.base_url || '')}</div>
           <div class="meta">
-            ${busy}
+            <span>images: <b>${gallery}</b></span>
             <span>queue: <b>${queue}</b></span>
-            <span>gallery: <b>${gallery}</b></span>
-            <span>seen: <b>${lastSeen}</b></span>
+            <span>last seen: <b>${lastSeen}</b></span>
+            ${s.error ? `<span style="color:var(--red)">error: ${escapeHtml(s.error)}</span>` : ''}
           </div>
         </div>
       `;
@@ -513,35 +566,55 @@
   }
 
   function renderScheduler(state) {
-    const s = state.scheduler || {};
-    $('sched-status').textContent = s.in_flight ? 'firing…' : (s.enabled ? 'armed' : 'paused');
-    $('sched-interval').textContent = fmtInterval(s.interval_seconds);
-    $('sched-last').textContent = s.last_fired_at ? fmtTime(s.last_fired_at) : '—';
-    $('sched-next').textContent = s.next_fire_at ? fmtTime(s.next_fire_at) : '—';
-    $('fire-now-btn').disabled = !!s.in_flight;
+    const sched = state.scheduler || {};
+    const st = $('sched-status');
+    if (!sched.enabled) {
+      st.innerHTML = '<span class="pill"><span class="swatch"></span>disabled</span>';
+    } else if (sched.in_flight) {
+      st.innerHTML = '<span class="pill busy"><span class="swatch"></span>running</span>';
+    } else {
+      st.innerHTML = '<span class="pill online"><span class="swatch"></span>idle</span>';
+    }
+    $('sched-interval').textContent = fmtInterval(sched.interval_seconds);
+    $('sched-last').textContent = sched.last_fired_at ? fmtRelative(sched.last_fired_at) : 'never';
+    if (sched.enabled && sched.next_fire_at) {
+      const remaining = Math.max(0, Math.floor(sched.next_fire_at - Date.now() / 1000));
+      $('sched-next').textContent = remaining + 's';
+    } else {
+      $('sched-next').textContent = '—';
+    }
   }
 
   function renderGallery(state) {
     const items = state.aggregated_gallery || [];
     $('gallery-count-label').textContent = '(' + items.length + ')';
     if (items.length === 0) {
-      $('gallery-grid').innerHTML = '<div class="empty">No images yet. Once the scheduler fires (or you click Fire now), generated images will appear here.</div>';
+      $('gallery-grid').innerHTML = '<div class="empty full" style="grid-column:1/-1">No images yet. Once a server generates art, it will appear here.</div>';
       $('gallery-source-summary').textContent = '';
       return;
     }
     const sources = new Set(items.map(i => i.server_name || i.server));
     $('gallery-source-summary').textContent = 'from ' + sources.size + ' server' + (sources.size === 1 ? '' : 's');
-    $('gallery-grid').innerHTML = items.slice(0, 60).map((img) => {
+    
+    // Only render top 40 in director dashboard for fast loading
+    const displayItems = items.slice(0, 40);
+    $('gallery-grid').innerHTML = displayItems.map((img) => {
       const url = img.url || (img.base_url ? img.base_url.replace(/\/$/, '') + '/' + (img.file || img.name || '') : (img.server ? img.server.replace(/\/$/, '') + (img.path || '/' + (img.file || img.name || '')) : '#'));
       const tag = img.server_name || img.server || '?';
       return `
         <div class="item" data-url="${escapeAttr(url)}">
-          <img src="${escapeAttr(url)}" loading="lazy" alt="">
+          <img data-src="${escapeAttr(url)}" alt="">
           <div class="tag">${escapeHtml(tag)}</div>
         </div>
       `;
     }).join('');
-    // wire lightbox
+
+    // Wire progressive thumbnail loader
+    document.querySelectorAll('.gallery-grid .item img').forEach(img => {
+      thumbObserver.observe(img);
+    });
+
+    // Wire lightbox to load full-res image on click
     document.querySelectorAll('.gallery-grid .item').forEach(el => {
       el.addEventListener('click', () => {
         const url = el.dataset.url;
@@ -601,18 +674,17 @@
   function openDrawer() {
     api('/api/director/config').then((cfg) => {
       editingConfig = cfg;
-      $('cfg-interval').value = cfg.scheduler.interval_seconds;
-      $('cfg-jitter').value = cfg.scheduler.jitter_seconds;
-      $('cfg-enabled').checked = !!cfg.scheduler.enabled;
-      $('cfg-p4-index').value = cfg.p4.source_server_index;
-      $('cfg-p4-strategy').value = cfg.p4.strategy || 'freshest';
+      $('cfg-interval').value = (cfg.scheduler && cfg.scheduler.interval_seconds) || 1800;
+      $('cfg-jitter').value = (cfg.scheduler && cfg.scheduler.jitter_seconds) || 60;
+      $('cfg-enabled').checked = !!(cfg.scheduler && cfg.scheduler.enabled);
+      
       const gen = cfg.generation || {};
       $('cfg-gen-steps').value = (gen.params || {}).steps || 20;
       $('cfg-gen-guidance').value = (gen.params || {}).guidance_scale || 7.5;
       $('cfg-gen-width').value = (gen.params || {}).width || 768;
       $('cfg-gen-height').value = (gen.params || {}).height || 448;
       $('cfg-gen-prompts').value = (gen.prompt_pool || []).join('\n');
-      renderServerEditor(cfg.servers);
+      renderServerEditor(cfg.servers || []);
       $('drawer').classList.add('open');
       $('scrim').classList.add('open');
       $('drawer').setAttribute('aria-hidden', 'false');
@@ -662,11 +734,11 @@
   }
   function saveConfig() {
     if (!editingConfig) return;
+    editingConfig.scheduler = editingConfig.scheduler || {};
     editingConfig.scheduler.interval_seconds = parseInt($('cfg-interval').value, 10);
     editingConfig.scheduler.jitter_seconds = parseInt($('cfg-jitter').value, 10);
     editingConfig.scheduler.enabled = $('cfg-enabled').checked;
-    editingConfig.p4.source_server_index = parseInt($('cfg-p4-index').value, 10);
-    editingConfig.p4.strategy = $('cfg-p4-strategy').value;
+    
     editingConfig.generation = editingConfig.generation || {params: {}, prompt_pool: []};
     editingConfig.generation.params = editingConfig.generation.params || {};
     editingConfig.generation.params.steps = parseInt($('cfg-gen-steps').value, 10);
@@ -697,16 +769,15 @@
   $('cfg-save').addEventListener('click', saveConfig);
   $('add-server-btn').addEventListener('click', () => {
     if (!editingConfig) return;
+    editingConfig.servers = editingConfig.servers || [];
     editingConfig.servers.push({ name: 'Server ' + (editingConfig.servers.length + 1), base_url: '', auth_token: '' });
     renderServerEditor(editingConfig.servers);
   });
   $('fire-now-btn').addEventListener('click', () => {
-    api('/api/director/trigger', { method: 'POST' })
-      .then(() => { showToast('Fired', 'success'); refresh(); })
-      .catch((e) => showToast('Trigger failed: ' + e.message, 'error'));
+    api('/api/director/trigger', { method: 'POST' })\n      .then(() => { showToast('Fired', 'success'); refresh(); })\n      .catch((e) => showToast('Trigger failed: ' + e.message, 'error'));
   });
 
-  // ---- Fullscreen gallery view ----
+  // ---- Fullscreen gallery mode ----
   if (location.pathname === '/gallery' || location.pathname === '/fullscreen') {
     document.body.classList.add('fullscreen-mode');
     document.querySelectorAll('header, main > section:not(.full)').forEach(el => el.style.display = 'none');
