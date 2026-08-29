@@ -58,6 +58,7 @@ WORKDIR = Path(__file__).parent.resolve()
 CONFIG_PATH = WORKDIR / "director_config.json"
 HTML_PATH = WORKDIR / "director.html"
 CONFIGURE_P4_HTML_PATH = WORKDIR / "configure_p4.html"
+DISPLAY_HTML_PATH = WORKDIR / "display.html"
 LOG_PATH = WORKDIR / "director.log"
 
 DEFAULT_CONFIG: dict = {
@@ -616,6 +617,16 @@ class DirectorHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send(500, {"error": f"read html failed: {e}"})
             return
+        if path in ("/display", "/display/"):
+            if not DISPLAY_HTML_PATH.exists():
+                self._send(404, {"error": "display.html not found"})
+                return
+            try:
+                html = DISPLAY_HTML_PATH.read_text(encoding="utf-8")
+                self._send(200, html, "text/html; charset=utf-8")
+            except Exception as e:
+                self._send(500, {"error": f"read html failed: {e}"})
+            return
         if path in ("/", "/index.html", "/gallery", "/fullscreen"):
             if not HTML_PATH.exists():
                 self._send(404, {"error": "director.html not found"})
@@ -673,6 +684,27 @@ class DirectorHandler(BaseHTTPRequestHandler):
                     "images": _state["aggregated_gallery"],
                 }
             self._send(200, body)
+            return
+        if path == "/api/director/latest":
+            # Return the single freshest image + a browser-ready absolute URL.
+            # aggregated_gallery is sorted newest-first (by timestamped filename).
+            with _lock:
+                gallery = _state.get("aggregated_gallery", [])
+            if not gallery:
+                self._send(200, {"url": None, "file": None, "server_name": None,
+                                 "prompt": None, "timestamp": None})
+                return
+            latest = gallery[0]
+            file = latest.get("file")
+            base = (latest.get("base_url") or "").rstrip("/")
+            url = f"{base}/{file}" if (base and file) else None
+            self._send(200, {
+                "url": url,
+                "file": file,
+                "server_name": latest.get("server_name"),
+                "prompt": latest.get("prompt"),
+                "timestamp": latest.get("timestamp"),
+            })
             return
         if path == "/api/director/config":
             with _lock:

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Art Display</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden; cursor: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  /* Two stacked <img> layers crossfade so image swaps never flash white. */
+  .layer {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: contain; background: #000;
+    transition: opacity 1.2s ease-in-out; opacity: 0;
+  }
+  .layer.visible { opacity: 1; }
+  #msg {
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    color: #555; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 20px; text-align: center; padding: 24px;
+  }
+</style>
+</head>
+<body>
+  <img id="a" class="layer" alt="" draggable="false">
+  <img id="b" class="layer" alt="" draggable="false">
+  <div id="msg">Loading…</div>
+
+<script>
+(function () {
+  const imgA = document.getElementById('a');
+  const imgB = document.getElementById('b');
+  const msg = document.getElementById('msg');
+  const POLL_MS = 20000;        // how often to check for a new image
+  const API = '/api/director/latest';
+
+  let currentFile = null;        // filename currently displayed
+  let active = imgA;             // the layer currently visible
+  let fetching = false;
+
+  function hide(el) { el.classList.remove('visible'); }
+  function show(el) { el.classList.add('visible'); }
+
+  async function loadLatest() {
+    if (fetching) return;
+    fetching = true;
+    try {
+      const resp = await fetch(API, { cache: 'no-store' });
+      const data = await resp.json();
+      if (!data || !data.url) {
+        msg.style.display = 'flex';
+        msg.textContent = 'No image yet';
+        fetching = false;
+        return;
+      }
+      // Nothing new — leave the current image on screen.
+      if (data.file && data.file === currentFile) {
+        fetching = false;
+        return;
+      }
+      // Preload the new image into the hidden layer, then crossfade.
+      const next = (active === imgA) ? imgB : imgA;
+      await new Promise((resolve, reject) => {
+        next.onload = resolve;
+        next.onerror = reject;
+        next.src = data.url;
+      });
+      hide(active);
+      show(next);
+      active = next;
+      currentFile = data.file;
+      msg.style.display = 'none';
+    } catch (e) {
+      // Transient failure — keep showing whatever is on screen; retry next poll.
+      msg.style.display = 'flex';
+      msg.textContent = 'Waiting for connection…';
+    }
+    fetching = false;
+  }
+
+  // Kick off immediately, then poll.
+  loadLatest();
+  setInterval(loadLatest, POLL_MS);
+
+  // Wake the poll up if the tab was backgrounded (e.g. TV sleeps/wakes).
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) loadLatest();
+  });
+})();
+</script>
+</body>
+</html>
