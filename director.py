@@ -650,6 +650,7 @@ class DirectorHandler(BaseHTTPRequestHandler):
                     "servers": _state["servers"],
                     "scheduler": _state["scheduler"],
                     "gallery_count": len(_state["aggregated_gallery"]),
+                    "aggregated_gallery": _state["aggregated_gallery"],
                     "gallery_sample": _state["aggregated_gallery"][:60],
                 }
             self._send(200, body)
