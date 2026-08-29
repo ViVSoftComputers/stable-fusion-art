@@ -7,6 +7,11 @@
 # Gallery data
 index.json
 
+# Runtime logs
+*.log
+director.log
+server_run.log
+
 # Python
 __pycache__/
 *.pyc
