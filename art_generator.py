@@ -14,6 +14,20 @@ GALLERY.mkdir(parents=True, exist_ok=True)
 
 PYTHON = r"C:\Users\ViV\AppData\Local\Programs\Python\Python312\python.exe"
 
+
+def _clean_env():
+    """Return an environment for the SD subprocess with PYTHONPATH stripped.
+
+    Without this, a caller's virtualenv (e.g. the Hermes agent venv) leaks its
+    site-packages into the Python 3.12 subprocess, and numpy/torch pick up the
+    wrong (cp311) compiled extensions, failing with
+    'No module named numpy._core._multiarray_umath'.
+    """
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    return env
+
+
 PROMPTS = [
     'A cyberpunk city at night, neon lights reflecting in rain puddles, ultra detailed',
     'A mystical forest with glowing mushrooms and fireflies, fantasy art',
@@ -39,8 +53,13 @@ def generate_prompt():
     return prompt
 
 
-def generate_image(prompt, filename):
-    """Generate image using SD 1.5 via subprocess to avoid VRAM conflicts."""
+def generate_image(prompt, filename, steps=20, guidance_scale=7.5, width=768, height=448):
+    """Generate image using SD 1.5 via subprocess to avoid VRAM conflicts.
+
+    All generation parameters are exposed so the server (or a config file) can
+    drive them. The subprocess isolates the model load so it never contends
+    with other processes (e.g. the local LLM) for the GPU.
+    """
     import subprocess
     script = f"""
 import torch, os
@@ -53,13 +72,14 @@ pipe = StableDiffusionPipeline.from_pretrained(
 )
 pipe = pipe.to('cuda')
 pipe.enable_attention_slicing()
-image = pipe({json.dumps(prompt)}, num_inference_steps=20, guidance_scale=7.5, width=768, height=448).images[0]
+image = pipe({json.dumps(prompt)}, num_inference_steps={steps}, guidance_scale={guidance_scale}, width={width}, height={height}).images[0]
 image.save(r'{filename}')
 print('OK')
 """
     result = subprocess.run(
         [PYTHON, "-c", script],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=300,
+        env=_clean_env(),
     )
     return "OK" in result.stdout
 
@@ -116,7 +136,52 @@ def generate():
         return None, None
 
 
+def generate_one(prompt, steps=20, guidance_scale=7.5, width=768, height=448):
+    """Generate a single image from an explicit prompt + params (server path).
+
+    Unlike generate(), this takes the prompt from the caller instead of picking
+    a random one, and it returns a plain dict so a caller (the HTTP server) can
+    consume the result without parsing stdout. Returns:
+        {"ok": bool, "file": name, "prompt": str, "error": str}
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = hashlib.md5(prompt.encode()).hexdigest()[:8]
+    filename = GALLERY / f"art_{timestamp}_{safe_name}.png"
+
+    success = generate_image(prompt, str(filename), steps, guidance_scale, width, height)
+    if not success:
+        return {"ok": False, "error": "generation failed", "prompt": prompt}
+
+    watermark_image(str(filename))
+    meta = {
+        "timestamp": timestamp,
+        "prompt": prompt,
+        "style": "SD 1.5",
+        "file": filename.name,
+        "steps": steps,
+        "width": width,
+        "height": height,
+    }
+    with open(GALLERY / "index.json", "a") as f:
+        f.write(json.dumps(meta) + "\n")
+    return {"ok": True, "file": filename.name, "prompt": prompt, "meta": meta}
+
+
 if __name__ == "__main__":
+    # Server subprocess mode: `art_generator.py --one '<json>'`
+    # Prints RESULT:<json> so the HTTP server can parse the outcome cleanly.
+    if len(sys.argv) >= 3 and sys.argv[1] == "--one":
+        params = json.loads(sys.argv[2])
+        result = generate_one(
+            params.get("prompt", ""),
+            params.get("steps", 20),
+            params.get("guidance_scale", 7.5),
+            params.get("width", 768),
+            params.get("height", 448),
+        )
+        print("RESULT:" + json.dumps(result))
+        sys.exit(0)
+
     prompt, path = generate()
     if prompt:
         print(f"\nDONE: {path}")
