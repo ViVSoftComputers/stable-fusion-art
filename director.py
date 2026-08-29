@@ -525,6 +525,9 @@ def poll_gallery() -> None:
     for s in servers:
         url = s.get("base_url", "").rstrip("/") + "/images"
         status, body = http_get(url, s.get("auth_token", ""), timeout=6.0)
+        # The server returns {"images": [...]}; tolerate a bare list too.
+        if status == 200 and isinstance(body, dict):
+            body = body.get("images", [])
         if status == 200 and isinstance(body, list):
             for item in body:
                 if isinstance(item, str):
