@@ -68,11 +68,12 @@ HOST = os.environ.get("ART_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ART_PORT", "8090"))
 
 DEFAULT_CONFIG = {
+    "name": "",                  # human label shown in /health (multi-server UI)
     "steps": 20,
     "guidance_scale": 7.5,
     "width": 768,
     "height": 448,
-    "auth_token": "",           # empty => auth disabled
+    "auth_token": "",            # empty => auth disabled
 }
 
 
@@ -255,6 +256,7 @@ class ArtServer(BaseHTTPRequestHandler):
             pngs = list(GALLERY.glob("*.png"))
             return self._send_json({
                 "status": "ok",
+                "name": cfg.get("name", ""),
                 "busy": busy,
                 "queue_depth": queue_depth,
                 "gallery_count": len(pngs),
