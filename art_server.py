@@ -270,6 +270,10 @@ class ArtServer(BaseHTTPRequestHandler):
         if path == "/images":
             return self._send_json({"images": self._list_images()})
 
+        # P4 panel framebuffer — the raw RGB565 the panel fetches.
+        if path == "/raw/latest.rgb565":
+            return self._serve_raw()
+
         if path == "/jobs":
             if not self._authorized():
                 return self._send_json({"error": "unauthorized"}, 401)
@@ -346,9 +350,21 @@ class ArtServer(BaseHTTPRequestHandler):
         return self._send_json({"error": "not found"}, 404)
 
     # ---- static serving ----
+    def _serve_raw(self):
+        """Serve the P4 panel's RGB565 framebuffer (latest.rgb565)."""
+        raw_path = GALLERY / "raw" / "latest.rgb565"
+        if not raw_path.is_file():
+            return self._send_json({"error": "no raw frame yet"}, 404)
+        data = raw_path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _list_images(self):
         items = []
-        index = GALLERY / "index.json"
         seen = set()
         if index.exists():
             for line in index.read_text().splitlines():

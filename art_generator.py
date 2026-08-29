@@ -136,6 +136,21 @@ def generate():
         return None, None
 
 
+def _convert_to_raw(image_path):
+    """Convert a single PNG to RGB565 and refresh latest.rgb565 for the P4 panel.
+
+    Uses convert_to_raw.py (which lives alongside this file in both the repo and
+    the deployed scripts dir). Loaded via importlib so it works regardless of
+    the subprocess working directory.
+    """
+    import importlib.util
+    conv_path = Path(__file__).resolve().parent / "convert_to_raw.py"
+    spec = importlib.util.spec_from_file_location("convert_to_raw", conv_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.convert_to_raw(Path(image_path))
+
+
 def generate_one(prompt, steps=20, guidance_scale=7.5, width=768, height=448):
     """Generate a single image from an explicit prompt + params (server path).
 
@@ -164,6 +179,14 @@ def generate_one(prompt, steps=20, guidance_scale=7.5, width=768, height=448):
     }
     with open(GALLERY / "index.json", "a") as f:
         f.write(json.dumps(meta) + "\n")
+
+    # Refresh the P4 panel's latest.rgb565 framebuffer from this new image.
+    try:
+        _convert_to_raw(str(filename))
+    except Exception as exc:  # noqa: BLE001
+        # Raw conversion is best-effort; never fail the job over it.
+        print(f"raw conversion skipped: {exc}")
+
     return {"ok": True, "file": filename.name, "prompt": prompt, "meta": meta}
 
 
