@@ -254,12 +254,16 @@ class ArtServer(BaseHTTPRequestHandler):
                 busy = any(j["status"] in ("queued", "running") for j in _JOBS.values())
                 queue_depth = _job_queue.qsize()
             pngs = list(GALLERY.glob("*.png"))
+            latest_time = None
+            if pngs:
+                latest_time = max(p.stat().st_mtime for p in pngs)
             return self._send_json({
                 "status": "ok",
                 "name": cfg.get("name", ""),
                 "busy": busy,
                 "queue_depth": queue_depth,
                 "gallery_count": len(pngs),
+                "latest_image_time": latest_time,  # epoch seconds, or null if empty
             })
 
         if path == "/config":
