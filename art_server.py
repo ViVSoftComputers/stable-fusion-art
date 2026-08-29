@@ -366,6 +366,7 @@ class ArtServer(BaseHTTPRequestHandler):
     def _list_images(self):
         items = []
         seen = set()
+        index = GALLERY / "index.json"
         if index.exists():
             for line in index.read_text().splitlines():
                 line = line.strip()
