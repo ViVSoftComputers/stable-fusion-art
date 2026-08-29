@@ -11,9 +11,6 @@ Responsibilities
 * Polls ``GET /health`` on every configured server, tracks busy/queue/gallery
   counts, and routes generation to the first server reporting ``busy == false``.
 * Aggregates ``GET /images`` from every server into a single gallery view.
-* Proxies ``/latest.rgb565`` from the configured "primary" server so the
-  CrowPanel P4 wall display can fetch from the director instead of a specific
-  server box.
 
 The director does NOT generate images. It only talks to servers over HTTP.
 
@@ -32,7 +29,8 @@ Endpoints
 * ``GET  /api/director/config``           -> current config
 * ``PUT  /api/director/config``           -> merge-update config
 * ``POST /api/director/trigger``          -> fire one generation now
-* ``GET  /latest.rgb565``                 -> proxy from primary server (P4 endpoint)
+* ``GET  /display``                       -> browser kiosk (fullscreen, auto-refresh)
+* ``GET  /api/director/latest``           -> freshest image URL (for the kiosk)
 """
 
 from __future__ import annotations
@@ -57,7 +55,6 @@ from typing import Any, Optional
 WORKDIR = Path(__file__).parent.resolve()
 CONFIG_PATH = WORKDIR / "director_config.json"
 HTML_PATH = WORKDIR / "director.html"
-CONFIGURE_P4_HTML_PATH = WORKDIR / "configure_p4.html"
 DISPLAY_HTML_PATH = WORKDIR / "display.html"
 LOG_PATH = WORKDIR / "director.log"
 
@@ -106,13 +103,6 @@ DEFAULT_CONFIG: dict = {
     "poll": {
         "health_interval_seconds": 10,
         "gallery_interval_seconds": 30,
-    },
-    "p4": {
-        # "freshest" = the server with the highest gallery_count (most
-        # recent successful image). Falls back to source_server_index when
-        # all servers are offline or have no health data.
-        "strategy": "freshest",
-        "source_server_index": 0,
     },
 }
 
@@ -212,10 +202,6 @@ def validate_config(cfg: dict) -> list:
                            "message": "must start with http:// or https://"})
         if not (s.get("name") or "").strip():
             errors.append({"path": f"servers[{i}].name", "message": "name is required"})
-    p4_index = int(cfg.get("p4", {}).get("source_server_index", 0) or 0)
-    if servers and (p4_index < 0 or p4_index >= len(servers)):
-        errors.append({"path": "p4.source_server_index",
-                       "message": f"must be 0..{len(servers) - 1}"})
     return errors
 
 
@@ -294,21 +280,6 @@ def http_post(url: str, body: dict, token: str = "",
             return e.code, None
     except Exception as e:
         return 0, str(e)
-
-
-def proxy_binary(url: str, token: str = "", timeout: float = 30.0
-                 ) -> tuple[int, bytes, dict]:
-    """Stream a binary file (latest.rgb565) from a server. Returns (status, body, headers)."""
-    req = urllib.request.Request(url, method="GET")
-    for k, v in _auth_header(token).items():
-        req.add_header(k, v)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status, r.read(), dict(r.headers)
-    except urllib.error.HTTPError as e:
-        return e.code, b"", {}
-    except Exception:
-        return 0, b"", {}
 
 
 # ---------------------------------------------------------------------------
@@ -607,16 +578,6 @@ class DirectorHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
-        if path == "/configure-p4":
-            if not CONFIGURE_P4_HTML_PATH.exists():
-                self._send(404, {"error": "configure_p4.html not found"})
-                return
-            try:
-                html = CONFIGURE_P4_HTML_PATH.read_text(encoding="utf-8")
-                self._send(200, html, "text/html; charset=utf-8")
-            except Exception as e:
-                self._send(500, {"error": f"read html failed: {e}"})
-            return
         if path in ("/display", "/display/"):
             if not DISPLAY_HTML_PATH.exists():
                 self._send(404, {"error": "display.html not found"})
@@ -658,8 +619,6 @@ class DirectorHandler(BaseHTTPRequestHandler):
                     "uptime_seconds": int(time.time() - _state["started_at"]),
                     "servers": srv_summary,
                     "scheduler": sched,
-                    "p4_strategy": _cfg_holder["cfg"].get("p4", {}).get(
-                        "strategy", "freshest"),
                 }
             self._send(200, body)
             return
@@ -745,50 +704,6 @@ class DirectorHandler(BaseHTTPRequestHandler):
                         break
                 out.append(row)
             self._send(200, {"servers": out})
-            return
-        if path == "/latest.rgb565":
-            cfg = _cfg_holder["cfg"]
-            servers = cfg.get("servers", [])
-            if not servers:
-                self._send(502, {"error": "no servers configured"})
-                return
-            strategy = cfg.get("p4", {}).get("strategy", "freshest")
-            chosen_index = None
-            with _lock:
-                state_servers = list(_state["servers"])
-            if strategy == "freshest" and state_servers:
-                best = None
-                for st in state_servers:
-                    if st.get("status") != "online":
-                        continue
-                    t = st.get("latest_image_time")
-                    if t is None:
-                        continue
-                    if best is None or t > best[1]:
-                        best = (st, t)
-                if best is not None:
-                    target_url = best[0]["base_url"]
-                    for i, s in enumerate(servers):
-                        if s["base_url"] == target_url:
-                            chosen_index = i
-                            break
-            if chosen_index is None:
-                chosen_index = int(cfg.get("p4", {}).get(
-                    "source_server_index", 0) or 0)
-                if chosen_index < 0 or chosen_index >= len(servers):
-                    chosen_index = 0
-            src = servers[chosen_index]
-            url = src["base_url"].rstrip("/") + "/raw/latest.rgb565"
-            status, data, headers = proxy_binary(
-                url, src.get("auth_token", ""), timeout=60.0)
-            if status == 200 and data:
-                ct = headers.get("Content-Type", "application/octet-stream")
-                extra = {"Content-Length": str(len(data)),
-                         "X-Director-Source": src.get("name", "?")}
-                self._send(200, data, ct, extra)
-            else:
-                self._send(status or 502,
-                           {"error": f"upstream returned {status} for {url}"})
             return
         if path == "/favicon.ico":
             self._send(204, b"", "image/x-icon")

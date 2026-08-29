@@ -37,16 +37,12 @@
     "params": {
       "steps": 20,
       "guidance_scale": 7.5,
-      "width": 768,
-      "height": 448
+      "width": 1024,
+      "height": 600
     }
   },
   "poll": {
     "health_interval_seconds": 10,
     "gallery_interval_seconds": 30
-  },
-  "p4": {
-    "strategy": "freshest",
-    "source_server_index": 0
   }
 }
