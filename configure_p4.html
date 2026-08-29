@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P4 Panel Setup — Web Serial</title>
+<style>
+  :root {
+    --bg: #0b0d12; --bg-elev: #131722; --bg-elev-2: #1a2030;
+    --border: #232a3a; --text: #e6e9f0; --text-dim: #8a93a6;
+    --accent: #4f8cff; --accent-2: #3ddc97; --danger: #ff5c5c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    width: 100%; max-width: 560px; background: var(--bg-elev);
+    border: 1px solid var(--border); border-radius: 14px; padding: 28px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+  p.sub { margin: 0 0 22px; color: var(--text-dim); font-size: 14px; line-height: 1.5; }
+  label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+  input[type=text] {
+    width: 100%; padding: 11px 12px; font-size: 15px;
+    background: var(--bg-elev-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; outline: none;
+  }
+  input[type=text]:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  button {
+    padding: 11px 18px; font-size: 14px; font-weight: 600;
+    border: none; border-radius: 8px; cursor: pointer;
+    transition: opacity .15s, transform .05s;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; }
+  button.secondary { background: var(--bg-elev-2); color: var(--text); border: 1px solid var(--border); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  #log {
+    margin-top: 18px; padding: 12px; background: #0a0c10; border: 1px solid var(--border);
+    border-radius: 8px; font-family: "SF Mono", Consolas, "Courier New", monospace;
+    font-size: 12px; white-space: pre-wrap; word-break: break-word;
+    min-height: 90px; max-height: 220px; overflow-y: auto; color: var(--text-dim);
+  }
+  .ok { color: var(--accent-2); }
+  .err { color: var(--danger); }
+  .note { margin-top: 16px; font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+  .note code { background: var(--bg-elev-2); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>P4 Panel Setup</h1>
+  <p class="sub">Configure a P4 art panel over USB serial (Web Serial API). Plug the panel into this machine, connect to its CH340K port, and send it the director URL.</p>
+
+  <label for="url">Director URL</label>
+  <input type="text" id="url" placeholder="http://100.82.167.121:8091" value="http://100.82.167.121:8091">
+
+  <div class="row">
+    <button class="primary" id="connect">Connect</button>
+    <button class="secondary" id="send" disabled>Send AT+DIRECTOR</button>
+    <button class="secondary" id="disconnect" disabled>Disconnect</button>
+  </div>
+
+  <div id="log">Waiting to connect…</div>
+
+  <div class="note">
+    <strong>How it works:</strong> this page opens a Web Serial connection to the panel's CH340K
+    USB port and writes <code>AT+DIRECTOR=&lt;url&gt;</code>, which the panel saves to NVS. Requires
+    <strong>Chrome or Edge</strong>, and this page must be served from <code>localhost</code> or HTTPS
+    (Web Serial is blocked on plain HTTP from another machine). The panel's console replies <code>OK</code>
+    on success. After configuring, the panel fetches from
+    <code>&lt;url&gt;/latest.rgb565</code> every 30 seconds.
+  </div>
+</div>
+
+<script>
+(function () {
+  const urlInput = document.getElementById('url');
+  const logEl = document.getElementById('log');
+  const connectBtn = document.getElementById('connect');
+  const sendBtn = document.getElementById('send');
+  const disconnectBtn = document.getElementById('disconnect');
+
+  let port = null;
+  let reader = null;
+  let readerDone = null;
+
+  function log(msg, cls) {
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function readLoop() {
+    const decoder = new TextDecoder();
+    try {
+      while (port && port.readable) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) log(decoder.decode(value, { stream: true }), '');
+      }
+    } catch (e) {
+      // Port closed or error — ignore unless we're still meant to be reading.
+    }
+  }
+
+  async function connect() {
+    if (!('serial' in navigator)) {
+      log('Web Serial is not supported in this browser. Use Chrome or Edge, served from localhost/HTTPS.', 'err');
+      return;
+    }
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      log('Connected to ' + (port.getInfo().usbVendorId ? 'USB serial port' : 'serial port'), 'ok');
+      connectBtn.disabled = true;
+      sendBtn.disabled = false;
+      disconnectBtn.disabled = false;
+
+      reader = port.readable.getReader();
+      readerDone = readLoop();
+    } catch (e) {
+      if (e.name !== 'NotFoundError') {
+        log('Connect failed: ' + e.message, 'err');
+      }
+    }
+  }
+
+  async function sendCommand() {
+    const url = urlInput.value.trim();
+    if (!url) { log('Enter a director URL first.', 'err'); return; }
+    if (!port || !port.writable) { log('Not connected.', 'err'); return; }
+
+    const cmd = 'AT+DIRECTOR=' + url + '\r\n';
+    const encoder = new TextEncoder();
+    const writer = port.writable.getWriter();
+    await writer.write(encoder.encode(cmd));
+    writer.releaseLock();
+    log('> ' + cmd.trim(), 'ok');
+  }
+
+  async function disconnect() {
+    try {
+      if (reader) { await reader.cancel(); reader = null; }
+      if (port) { await port.close(); port = null; }
+    } catch (e) {}
+    connectBtn.disabled = false;
+    sendBtn.disabled = true;
+    disconnectBtn.disabled = true;
+    log('Disconnected.');
+  }
+
+  connectBtn.addEventListener('click', connect);
+  sendBtn.addEventListener('click', sendCommand);
+  disconnectBtn.addEventListener('click', disconnect);
+})();
+</script>
+</body>
+</html>

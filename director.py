@@ -57,6 +57,7 @@ from typing import Any, Optional
 WORKDIR = Path(__file__).parent.resolve()
 CONFIG_PATH = WORKDIR / "director_config.json"
 HTML_PATH = WORKDIR / "director.html"
+CONFIGURE_P4_HTML_PATH = WORKDIR / "configure_p4.html"
 LOG_PATH = WORKDIR / "director.log"
 
 DEFAULT_CONFIG: dict = {
@@ -605,6 +606,16 @@ class DirectorHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        if path == "/configure-p4":
+            if not CONFIGURE_P4_HTML_PATH.exists():
+                self._send(404, {"error": "configure_p4.html not found"})
+                return
+            try:
+                html = CONFIGURE_P4_HTML_PATH.read_text(encoding="utf-8")
+                self._send(200, html, "text/html; charset=utf-8")
+            except Exception as e:
+                self._send(500, {"error": f"read html failed: {e}"})
+            return
         if path in ("/", "/index.html", "/gallery", "/fullscreen"):
             if not HTML_PATH.exists():
                 self._send(404, {"error": "director.html not found"})
