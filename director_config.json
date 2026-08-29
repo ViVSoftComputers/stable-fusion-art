@@ -1,0 +1,57 @@
+{
+  "director": {
+    "host": "0.0.0.0",
+    "port": 8091,
+    "name": "stable-fusion-director"
+  },
+  "servers": [
+    {
+      "name": "Local",
+      "base_url": "http://127.0.0.1:8090",
+      "auth_token": ""
+    },
+    {
+      "name": "Tailscale GPU",
+      "base_url": "http://100.82.167.121:8090",
+      "auth_token": ""
+    }
+  ],
+  "scheduler": {
+    "enabled": true,
+    "interval_seconds": 1800,
+    "jitter_seconds": 60
+  },
+  "generation": {
+    "prompt_pool": [
+      "a misty mountain range at golden hour, painted in the style of Hudson River School art",
+      "a cyberpunk cityscape at night with neon reflections in the rain",
+      "a serene Japanese garden in autumn with a stone lantern and maple leaves",
+      "an astronaut floating in deep space with Earth reflected in the visor",
+      "a dragon perched on a cliff above the clouds at sunrise",
+      "a vintage steam locomotive crossing a wooden trestle bridge in autumn",
+      "a bioluminescent forest at night with glowing mushrooms and fireflies",
+      "a coastal lighthouse in a thunderstorm with dramatic waves",
+      "a futuristic solarpunk village with green terraces and wind turbines",
+      "a crystal cave with a single shaft of sunlight piercing the darkness",
+      "a robot tending a small garden in a post-industrial landscape",
+      "an ancient library carved into a cliff face, lit by floating lanterns",
+      "a hot air balloon festival at dawn over rolling hills",
+      "a sunken city underwater with schools of fish swimming through arches",
+      "a snow-covered village at twilight with smoke rising from chimneys"
+    ],
+    "params": {
+      "steps": 20,
+      "guidance_scale": 7.5,
+      "width": 768,
+      "height": 448
+    }
+  },
+  "poll": {
+    "health_interval_seconds": 10,
+    "gallery_interval_seconds": 30
+  },
+  "p4": {
+    "strategy": "freshest",
+    "source_server_index": 0
+  }
+}
