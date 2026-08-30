@@ -187,7 +187,7 @@ Environment variables:
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `ART_GALLERY` | `~/.hermes/gallery` | gallery directory |
+| `ART_GALLERY` | `~/.art/gallery` | gallery directory |
 | `ART_PYTHON` | *(hardcoded Python312 path)* | Python with torch/diffusers |
 | `ART_HOST` / `ART_PORT` | `0.0.0.0` / `8090` | server bind address |
 | `ART_PORT` | — | server port |

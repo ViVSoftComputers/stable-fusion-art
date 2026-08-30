@@ -9,7 +9,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-GALLERY = Path(os.environ.get("ART_GALLERY", os.path.expanduser("~/.hermes/gallery")))
+GALLERY = Path(os.environ.get("ART_GALLERY", os.path.expanduser("~/.art/gallery")))
 GALLERY.mkdir(parents=True, exist_ok=True)
 
 PYTHON = r"C:\Users\ViV\AppData\Local\Programs\Python\Python312\python.exe"
@@ -211,9 +211,10 @@ if __name__ == "__main__":
         print(f"PROMPT: {prompt}")
         # Signal for Telegram delivery
         print("MEDIA:" + path)
-        # Convert to raw RGB565 for P4 panel
+        # Convert to raw RGB565 for P4 panel (convert_to_raw.py lives alongside this file)
         import subprocess
-        subprocess.run([PYTHON, os.path.expanduser("~/.hermes/scripts/convert_to_raw.py")], timeout=30)
+        conv_path = Path(__file__).resolve().parent / "convert_to_raw.py"
+        subprocess.run([PYTHON, str(conv_path)], timeout=30)
         print("RAW: converted")
 
     # Cleanup images older than 24 hours

@@ -2,7 +2,8 @@
 """Art server watchdog — checks port 8090, restarts art_server.py if dead."""
 import socket
 import subprocess
-import os
+import sys
+from pathlib import Path
 
 def is_alive():
     try:
@@ -14,9 +15,12 @@ def is_alive():
 
 if not is_alive():
     print("Art server down, restarting...")
+    # art_server.py is stdlib-only and lives alongside this watchdog, so launch
+    # it with the current interpreter and a relative path (works in the repo
+    # and in any deployed scripts directory alike).
+    server = Path(__file__).resolve().parent / "art_server.py"
     subprocess.Popen(
-        [r"C:\Users\ViV\AppData\Local\Programs\Python\Python312\python.exe",
-         os.path.expanduser("~/.hermes/scripts/art_server.py")],
+        [sys.executable, str(server)],
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     print("Restarted")
