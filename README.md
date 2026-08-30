@@ -194,9 +194,89 @@ Environment variables:
 - **Server + director**: Python stdlib only.
 - **Generation** (`art_generator.py`): Stable Diffusion 1.5 via
   `torch` + `diffusers` + `transformers`, running under a pinned Python
-  environment (see the `ART_PYTHON` note above).
+  environment (see below).
 - **Optional**: `convert_to_raw.py` needs Pillow if you use the raw RGB565
   output for an embedded wall panel.
+
+## Setting up the SD 1.5 environment
+
+The server and director are pure stdlib, but **generation needs a dedicated
+Python environment with a CUDA build of PyTorch + Diffusers**. This is the one
+part of the project that is genuinely version-sensitive — the versions below
+are pinned for a reason and should not be casually upgraded.
+
+### 1. Create a dedicated Python 3.12 venv
+
+Use a standalone Python 3.12 (not a shared/system install) so nothing else
+can disturb it:
+
+```bash
+python3.12 -m venv sd-env
+# Windows activate:
+sd-env\Scripts\activate
+# macOS/Linux:
+# source sd-env/bin/activate
+```
+
+### 2. Install the pinned packages (CUDA build)
+
+PyTorch's default wheel is CPU-only. The GPU build comes from a **separate
+index**, and the exact versions matter — a mismatched `torch`/`diffusers` pair
+breaks at import or at inference:
+
+```bash
+pip install torch==2.6.0 torchvision==0.21.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+pip install diffusers==0.31.0 transformers==4.47.0
+pip install pillow
+```
+
+> **Why pinned:** `diffusers 0.31.0` has the `StableDiffusionPipeline` API the
+> generator is written against. Newer Diffusers releases changed the pipeline
+> interface, so a casual `pip install -U` will produce cryptic errors. `torch
+> 2.6.0+cu124` is matched to the `cu124` index; other CUDA versions won't find
+> a compatible wheel. These four packages (`torch`, `torchvision`, `diffusers`,
+> `transformers`) are a locked set.
+
+### 3. Point the server at this Python
+
+`art_server.py` reads the `ART_PYTHON` environment variable (or a hardcoded
+default) to pick the interpreter it spawns for generation. Set it to the venv
+you just made:
+
+```bash
+# Windows
+set ART_PYTHON=C:\path\to\sd-env\Scripts\python.exe
+# macOS/Linux
+export ART_PYTHON=/path/to/sd-env/bin/python
+```
+
+If you don't set it, edit the `PYTHON` constant at the top of `art_server.py`
+and `art_generator.py` to point at your interpreter.
+
+### 4. Model weights
+
+The generator loads `sd-legacy/stable-diffusion-v1-5` via Diffusers. On the
+first run it downloads ~4GB into the Hugging Face cache
+(`~/.cache/huggingface/`).
+
+> **Windows gotcha:** Hugging Face downloads frequently **hang** on Windows.
+> If a first-run download stalls, don't retry in a loop — fetch the missing
+> individual files with `curl` from
+> `https://huggingface.co/sd-legacy/stable-diffusion-v1-5/resolve/main/<file>`
+> and place them in the cache directory. The model needs `model_index.json`,
+> the `unet/`, `vae/`, `text_encoder/`, `tokenizer/`, and `scheduler/` folders,
+> plus the safetensors weights.
+
+### 5. Verify
+
+```bash
+python -c "import torch; print('cuda', torch.cuda.is_available())"
+```
+
+`True` means the environment is ready. Then start `art_server.py` with
+`ART_PYTHON` set and submit a test job — a ~3s image on an RTX 3060 confirms
+the whole chain works.
 
 ## License
 
