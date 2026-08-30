@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from PIL import Image
 
-GALLERY = Path(os.environ.get("HERMES_GALLERY", os.path.expanduser("~/.hermes/gallery")))
+GALLERY = Path(os.environ.get("ART_GALLERY", os.path.expanduser("~/.hermes/gallery")))
 RAW_DIR = GALLERY / "raw"
 RAW_DIR.mkdir(exist_ok=True)
 

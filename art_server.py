@@ -50,7 +50,7 @@ from pathlib import Path
 #  Paths & constants
 # --------------------------------------------------------------------------- #
 
-GALLERY = Path(os.environ.get("HERMES_GALLERY", os.path.expanduser("~/.hermes/gallery")))
+GALLERY = Path(os.environ.get("ART_GALLERY", os.path.expanduser("~/.hermes/gallery")))
 GALLERY.mkdir(parents=True, exist_ok=True)
 
 HERE = Path(__file__).resolve().parent

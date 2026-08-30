@@ -9,7 +9,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-GALLERY = Path(os.environ.get("HERMES_GALLERY", os.path.expanduser("~/.hermes/gallery")))
+GALLERY = Path(os.environ.get("ART_GALLERY", os.path.expanduser("~/.hermes/gallery")))
 GALLERY.mkdir(parents=True, exist_ok=True)
 
 PYTHON = r"C:\Users\ViV\AppData\Local\Programs\Python\Python312\python.exe"
