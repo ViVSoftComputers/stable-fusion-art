@@ -227,7 +227,8 @@ breaks at import or at inference:
 ```bash
 pip install torch==2.6.0 torchvision==0.21.0 \
     --index-url https://download.pytorch.org/whl/cu124
-pip install diffusers==0.31.0 transformers==4.47.0
+pip install diffusers==0.31.0 transformers==4.47.0 \
+    accelerate==1.14.0 safetensors==0.8.0
 pip install pillow
 ```
 
@@ -235,8 +236,8 @@ pip install pillow
 > generator is written against. Newer Diffusers releases changed the pipeline
 > interface, so a casual `pip install -U` will produce cryptic errors. `torch
 > 2.6.0+cu124` is matched to the `cu124` index; other CUDA versions won't find
-> a compatible wheel. These four packages (`torch`, `torchvision`, `diffusers`,
-> `transformers`) are a locked set.
+> a compatible wheel. These packages are a locked set — the exact versions
+> above are the ones confirmed working on the reference RTX 3060 box.
 
 ### 3. Point the server at this Python
 
