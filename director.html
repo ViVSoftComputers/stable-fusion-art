@@ -886,7 +886,9 @@
     renderServerEditor(editingConfig.servers);
   });
   $('fire-now-btn').addEventListener('click', () => {
-    api('/api/director/trigger', { method: 'POST' })\n      .then(() => { showToast('Fired', 'success'); refresh(); })\n      .catch((e) => showToast('Trigger failed: ' + e.message, 'error'));
+    api('/api/director/trigger', { method: 'POST' })
+      .then(() => { showToast('Fired', 'success'); refresh(); })
+      .catch((e) => showToast('Trigger failed: ' + e.message, 'error'));
   });
 
   // ---- Keyboard shortcuts ----
