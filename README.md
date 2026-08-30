@@ -1,116 +1,195 @@
-# Stable Fusion Art — Server & Director
+# Stable Fusion Art
 
-An autonomous AI art generation system with a decoupled **Director / Server**
-architecture:
+An autonomous AI art generation system. A GPU server generates images with
+Stable Diffusion 1.5 on a schedule, a director orchestrates one or more servers,
+and the results are shown in a browser gallery and a fullscreen wall-display
+kiosk.
 
-- **Server (`art_server.py`)** — runs on the GPU machine (e.g. RTX 3060), hosts
-  Stable Diffusion 1.5, executes generation jobs (`POST /generate`), tracks async
-  job status (`GET /jobs/<id>`), and serves the image gallery.
-- **Director (`director.py`)** — central orchestrator. Manages one or more
-  generation servers, schedules timed jobs to idle nodes, aggregates the gallery
-  across servers, and serves the management UI plus a fullscreen browser kiosk
-  for wall displays / smart TVs.
-
----
-
-## Architecture Overview
-
-```text
-┌────────────────────────────────────────────────────────────┐
-│                      STABLE FUSION DIRECTOR                │
-│                       (director.py :8091)                  │
-│                                                            │
-│  • Multi-server health polling  (GET /health)              │
-│  • Job routing to idle servers  (busy == false)            │
-│  • Central scheduler            (interval & jitter)        │
-│  • Gallery aggregation          (merges GET /images)       │
-│  • Config UI / management console (director.html)          │
-│  • Browser kiosk  (display.html, /display)                 │
-└──────────────┬───────────────────────────┬─────────────────┘
-               │                           │
-       HTTP API calls              HTTP API calls
-               ▼                           ▼
-┌──────────────────────────────┐  ┌──────────────────────────────┐
-│        GPU SERVER #1         │  │        GPU SERVER #2         │
-│        (art_server.py)       │  │        (art_server.py)       │
-│  • Local SD 1.5 generation   │  │  • Local SD 1.5 generation   │
-│  • Async job queue (/jobs)   │  │  • Async job queue (/jobs)   │
-│  • Static gallery / images   │  │  • Static gallery / images   │
-└──────────────────────────────┘  └──────────────────────────────┘
+```
+                    ┌─────────────────────────────────────────────┐
+                    │                director.py                   │
+                    │  (port 8091) — scheduler + orchestrator      │
+                    │                                              │
+                    │  • fires generation on a timer                │
+                    │  • health-polls servers, routes to idle ones │
+                    │  • aggregates galleries from every server    │
+                    │  • serves the dashboard + the kiosk          │
+                    └───────────────┬──────────────────────────────┘
+                                    │  HTTP (JSON API)
+                    ┌───────────────▼──────────────────────────────┐
+                    │                art_server.py                  │
+                    │  (port 8090) — the generation engine          │
+                    │                                              │
+                    │  • async job queue, serialized GPU generation │
+                    │  • spawns art_generator.py (SD 1.5)          │
+                    │  • serves the static gallery + image files   │
+                    │  • optional token auth, retention pruning    │
+                    └──────────────────────────────────────────────┘
 ```
 
----
+## What it does
 
-## Files
+- **Autonomous generation** — the director picks a random prompt from a pool
+  and fires a job on an idle server every N minutes (configurable, with jitter).
+- **Decoupled server / director** — servers are interchangeable peers that only
+  speak a small JSON API. The director load-balances across any number of them.
+- **Browser gallery** — the server serves a static viewer (`gallery.html`) plus
+  the images themselves.
+- **Fullscreen wall-display kiosk** — the director serves `/display`, a
+  fullscreen page that auto-refreshes to the newest image with a crossfade.
+- **Management dashboard** — the director serves a live dashboard: server
+  health, scheduler status, aggregated gallery, and a config drawer.
 
-| File | Purpose |
-|------|---------|
-| `art_server.py` | Server backend: Stable Diffusion runner, async job engine, gallery + static image serving |
-| `director.py` | Director service: scheduler, health monitor, gallery aggregator, management UI + browser kiosk |
-| `director.html` | Director dashboard: gallery, server health, config drawer |
-| `display.html` | **Fullscreen browser kiosk** — auto-refreshes to the freshest image (for TVs / wall displays) |
-| `director_config.json` | Director settings (server list, scheduler interval, prompt pool) |
-| `art_generator.py` | Local Stable Diffusion generation pipeline |
-| `gallery.html` | Standalone server gallery UI |
-| `gallery_watchdog.py` | Server watchdog (checks port 8090, restarts `art_server.py`) |
-| `director_watchdog.py` | Director watchdog (checks port 8091) |
-| `API.md` | Detailed server API contract |
+## Architecture
 
----
+| Component | Port | Role |
+|-----------|------|------|
+| `art_server.py` | 8090 | Generation engine. Runs on the GPU machine. |
+| `art_generator.py` | — | SD 1.5 pipeline, spawned as a subprocess per job. |
+| `director.py` | 8091 | Orchestrator. Schedules work, aggregates galleries, serves UI. |
+| `director.html` | — | The management dashboard (served by the director). |
+| `display.html` | — | The fullscreen kiosk page (served by the director). |
+| `gallery.html` | — | Static gallery viewer (served by the server). |
+| `convert_to_raw.py` | — | Converts a PNG to raw RGB565 for the wall panel. |
+| `gallery_watchdog.py` | — | Restarts the server if port 8090 goes down. |
 
-## Server API Contract
+### Server (`art_server.py`)
 
-All endpoints on the server port (default `:8090`). See **`API.md`** for the
-full contract with examples.
+- Async generation: a single worker pops jobs from a queue and runs them one at
+  a time (SD 1.5 holds the GPU, so serializing is correct).
+- Each job spawns `art_generator.py --one '<json>'` in a subprocess so the model
+  load never contends with other GPU processes (e.g. a local LLM).
+- Serves the static gallery (`gallery.html`, images, `index.json`).
+- Optional token auth on API endpoints (`auth_token` in config).
+- **Retention pruning** — `max_images_kept` caps the gallery size; old PNGs are
+  pruned and `index.json` is kept in sync after every generation.
 
-- `GET /health` — status, `busy`, `queue_depth`, `gallery_count`, `latest_image_time`
-- `GET /config` / `PUT /config` — read / update generation params
-- `POST /generate` — submit a job `{"prompt": "...", ...}` → `202 {"job_id": "..."}`
-- `GET /jobs/<id>` — poll job status (`queued | running | done | failed`)
-- `GET /jobs` — list jobs
-- `GET /images` — gallery metadata, newest first
-- `GET /<file.png>` — serve a generated image
-- `GET /` — the standalone `gallery.html` viewer
+### Director (`director.py`)
 
----
+- Owns the schedule: fires `POST /generate` on an idle server on a configurable
+  interval. The server's own local cron is disabled in favor of this.
+- Polls `GET /health` on every server, tracks busy/queue/gallery, and routes
+  work to the first idle server.
+- Aggregates `GET /images` from all servers into one gallery.
+- Serves the dashboard (`/`) and the kiosk (`/display`).
 
-## Director API & Endpoints
+## Endpoints
 
-Director runs on port `:8091` (default):
+### Server API (`art_server.py`, port 8090)
 
-- `GET /` — director management UI (`director.html`)
-- `GET /display` — **browser kiosk** (fullscreen, auto-refresh, crossfade)
-- `GET /api/director/health` — director health + server states
-- `GET /api/director/state` — full state snapshot (servers, scheduler, aggregated gallery)
-- `GET /api/director/gallery` — aggregated gallery (`{"count", "images"}`)
-- `GET /api/director/latest` — single freshest image `{"url", "file", "server_name", "prompt", "timestamp"}`
-- `GET /api/director/config` / `PUT /api/director/config` — manage director config
-- `POST /api/director/trigger` — fire one generation now on an idle server
-- `GET /api/director/servers` — list configured servers
-- `GET /api/director/servers/<i>/config` / `PUT ...` — proxy config to a server
+Full contract in [`API.md`](API.md). Summary:
 
-The kiosk (`/display`) polls `/api/director/latest`, preloads the next image, and
-crossfades when a new one appears — no white flash, keyboardless, safe to leave
-on a TV indefinitely.
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/` | `gallery.html` viewer |
+| GET | `/<file>` | any image/file in the gallery |
+| GET | `/images` | gallery metadata, newest first |
+| GET | `/index.json` | metadata, newline-delimited JSON |
+| GET | `/health` | `status`, `busy`, `queue_depth`, `gallery_count`, `max_images_kept` |
+| GET | `/config` | generation settings |
+| PUT | `/config` | merge-update settings |
+| POST | `/generate` | submit a job → `{ "job_id": "..." }` |
+| GET | `/jobs` | all jobs |
+| GET | `/jobs/<id>` | one job (status, image, error) |
 
----
+### Director API (`director.py`, port 8091)
 
-## Running
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/` | the dashboard (`director.html`) |
+| GET | `/display` | fullscreen kiosk (`display.html`) |
+| GET | `/api/director/health` | director's own health |
+| GET | `/api/director/state` | full state (servers, scheduler, gallery) |
+| GET | `/api/director/config` | current director config |
+| PUT | `/api/director/config` | merge-update director config |
+| POST | `/api/director/trigger` | fire one generation now |
+| GET | `/api/director/latest` | freshest image URL (for the kiosk) |
 
-### 1. Start the server on the GPU machine
+## Features
+
+### Dashboard (`director.html`)
+
+- Live server health (status pill, queue depth, gallery count, latency)
+- Scheduler status + "Fire now" trigger
+- Aggregated gallery with **client-side thumbnail caching** (canvas 320px) and
+  `IntersectionObserver` lazy-loading for progressive grid load
+- Lightbox viewer with **full-resolution download** button + filename badge
+- Per-tile quick-download buttons
+- Settings drawer: add/remove servers, edit generation params, prompt pool,
+  **per-server retention limit** (`max_images_kept`), auth token
+
+### Wall-display kiosk (`display.html`)
+
+- Fullscreen, auto-refreshes the newest image every 20s
+- Two stacked `<img>` layers crossfade so swaps never flash white
+- **Fill (cover) vs. letterbox (contain)** toggle — click/tap, or press `M`
+- **HTML5 Fullscreen API** — button, double-click, or press `F`
+- Cursor auto-hides after 2.5s of inactivity; wakes polling on tab focus
+
+## Configuration
+
+### `director_config.json`
+
+```json
+{
+  "director": { "host": "0.0.0.0", "port": 8091 },
+  "servers": [ { "name": "...", "base_url": "http://...:8090", "auth_token": "" } ],
+  "scheduler": { "enabled": true, "interval_seconds": 1800, "jitter_seconds": 60 },
+  "generation": { "prompt_pool": [ "..." ], "params": { "steps": 20 } },
+  "poll": { "health_interval_seconds": 10, "gallery_interval_seconds": 30 }
+}
+```
+
+### `server_config.json` (gitignored)
+
+```json
+{
+  "name": "my-gpu",
+  "steps": 20,
+  "guidance_scale": 7.5,
+  "width": 768,
+  "height": 448,
+  "auth_token": "",
+  "max_images_kept": 50
+}
+```
+
+`server_config.json` is **not committed** — it holds machine-specific settings
+(and possibly a token), so it's excluded via `.gitignore`.
+
+## Running it
+
+Both processes are Python standard-library only — **no `pip install` needed**
+for the server/director themselves. The only external dependency is the SD
+pipeline environment used by `art_generator.py` (torch + diffusers, pinned).
+
 ```bash
+# 1. start the server (GPU machine)
 python art_server.py
-```
 
-### 2. Start the director
-```bash
+# 2. start the director (anywhere reachable over HTTP)
 python director.py
 ```
 
-### 3. View
-- Management UI: `http://localhost:8091` (or your Tailscale / LAN IP)
-- **Wall display / TV**: open `http://<director-ip>:8091/display` and go fullscreen
+> **Note:** `art_server.py` and `art_generator.py` hardcode the path to the
+> Python interpreter that has torch/diffusers installed (`ART_PYTHON` env var,
+> defaulting to a Windows `Python312` path). Change `ART_PYTHON` (or the
+> `PYTHON` constant in `art_generator.py`) to point at your own environment.
 
-Both services have watchdogs (registered as cron jobs) that restart them if they
-die — `gallery_watchdog.py` for the server, `director_watchdog.py` for the
-director.
+Environment variables:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `HERMES_GALLERY` | `~/.hermes/gallery` | gallery directory |
+| `ART_PYTHON` | *(hardcoded Python312 path)* | Python with torch/diffusers |
+| `ART_HOST` / `ART_PORT` | `0.0.0.0` / `8090` | server bind address |
+| `ART_PORT` | — | server port |
+
+## Dependencies
+
+- **Server + director**: Python stdlib only.
+- **Generation** (`art_generator.py`): Stable Diffusion 1.5 via
+  `torch` + `diffusers` + `transformers`, running under a pinned Python
+  environment (see the `ART_PYTHON` note above).
+- **Optional**: `convert_to_raw.py` needs Pillow if you use the raw RGB565
+  output for an embedded wall panel.
