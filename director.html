@@ -574,7 +574,7 @@
     const pill = $('overall-pill');
     const label = pill.querySelector('.label');
     const count = (state.servers || []).length;
-    const online = (state.servers || []).filter(s => s.online).length;
+    const online = (state.servers || []).filter(s => s.status === 'online').length;
     if (count === 0) {
       pill.className = 'pill offline';
       label.textContent = 'no servers';
@@ -603,7 +603,7 @@
     host.innerHTML = servers.map((s) => {
       let pillClass = 'offline';
       let pillText = 'offline';
-      if (s.online) {
+      if (s.status === 'online') {
         if (s.busy) {
           pillClass = 'busy';
           pillText = 'busy (q=' + (s.queue_depth || 0) + ')';
@@ -624,8 +624,8 @@
           <div class="meta">
             <span>images: <b>${s.gallery_count ?? '—'}</b></span>
             <span>latest: <b>${latest}</b></span>
-            <span>limit: <b>${s.max_images_kept ?? 50}</b></span>
-            <span>last check: <b>${fmtRelative(s.last_checked)}</b></span>
+            <span>limit: <b>${s.max_images_kept ?? '—'}</b></span>
+            <span>last check: <b>${s.last_checked_at ? fmtRelative(s.last_checked_at) : '—'}</b></span>
           </div>
         </div>
       `;

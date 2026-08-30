@@ -309,6 +309,7 @@ class ArtServer(BaseHTTPRequestHandler):
                 "busy": busy,
                 "queue_depth": queue_depth,
                 "gallery_count": len(pngs),
+                "max_images_kept": cfg.get("max_images_kept", 50),
                 "latest_image_time": latest_time,  # epoch seconds, or null if empty
             })
 

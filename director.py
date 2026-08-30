@@ -471,6 +471,7 @@ def poll_health() -> None:
             st["busy"] = body.get("busy")
             st["queue_depth"] = body.get("queue_depth")
             st["gallery_count"] = body.get("gallery_count")
+            st["max_images_kept"] = body.get("max_images_kept")
             st["latest_image_time"] = body.get("latest_image_time")
         else:
             st["error"] = _safe_short(body)
@@ -607,6 +608,7 @@ class DirectorHandler(BaseHTTPRequestHandler):
                     "busy": s.get("busy"),
                     "queue_depth": s.get("queue_depth"),
                     "gallery_count": s.get("gallery_count"),
+                    "max_images_kept": s.get("max_images_kept"),
                     "latest_image_time": s.get("latest_image_time"),
                     "latency_ms": s.get("latency_ms"),
                 } for s in _state["servers"]]
