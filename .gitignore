@@ -3,6 +3,7 @@
 *.rgb565
 *.jpg
 *.jpeg
+!assets/sample.jpg
 
 # Gallery data
 index.json

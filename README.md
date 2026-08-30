@@ -7,6 +7,8 @@ kiosk.
 
 **By [ViVSoft Computers LLC](https://www.vivsoft.live) · [LoRa Mesh Devices](https://hub.lorameshdevices.com/)** · MIT License
 
+![Sample output](assets/sample.jpg)
+
 ```
                     ┌─────────────────────────────────────────────┐
                     │                director.py                   │
