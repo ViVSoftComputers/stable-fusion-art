@@ -74,6 +74,7 @@ DEFAULT_CONFIG = {
     "width": 768,
     "height": 448,
     "auth_token": "",            # empty => auth disabled
+    "max_images_kept": 50,       # maximum last images retained in gallery
 }
 
 
@@ -129,7 +130,45 @@ def _clean_env():
     return env
 
 
-def worker_loop():
+def prune_gallery(limit: int = 50):
+    """Keep only the latest `limit` PNGs in the gallery directory and update index.json."""
+    if not limit or limit <= 0:
+        return
+    pngs = sorted(GALLERY.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if len(pngs) <= limit:
+        return
+
+    to_delete = pngs[limit:]
+    deleted_names = set()
+    for p in to_delete:
+        try:
+            p.unlink(missing_ok=True)
+            deleted_names.add(p.name)
+        except OSError:
+            pass
+
+    # Prune index.json to match
+    index_path = GALLERY / "index.json"
+    if index_path.exists() and deleted_names:
+        try:
+            lines = index_path.read_text(encoding="utf-8").splitlines()
+            kept = []
+            for line in lines:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+                try:
+                    meta = json.loads(line_str)
+                    if meta.get("file") not in deleted_names:
+                        kept.append(line_str)
+                except Exception:
+                    kept.append(line_str)
+            index_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        except OSError:
+            pass
+
+
+def worker_loop(cfg_fn):
     """Pop jobs one at a time and run them via art_generator.py subprocess."""
     while True:
         job = _job_queue.get()
@@ -158,6 +197,13 @@ def worker_loop():
             if result and result.get("ok"):
                 _set_job(job_id, status="done",
                          image=result.get("file"), error=None)
+                # Prune gallery according to server max_images_kept setting
+                try:
+                    cur_cfg = cfg_fn() if callable(cfg_fn) else load_config()
+                    max_kept = int(cur_cfg.get("max_images_kept", 50))
+                    prune_gallery(max_kept)
+                except Exception:
+                    pass
             else:
                 err = (result or {}).get("error") or "unknown generation failure"
                 _set_job(job_id, status="failed", error=err)
@@ -350,6 +396,10 @@ class ArtServer(BaseHTTPRequestHandler):
                     cfg[key] = req[key]
             self.server.config = cfg
             save_config(cfg)
+            try:
+                prune_gallery(int(cfg.get("max_images_kept", 50)))
+            except Exception:
+                pass
             return self._send_json(cfg)
         return self._send_json({"error": "not found"}, 404)
 
@@ -423,12 +473,18 @@ class ArtServer(BaseHTTPRequestHandler):
 # --------------------------------------------------------------------------- #
 
 def main():
-    # Start worker thread (daemon so it dies with the process).
-    t = threading.Thread(target=worker_loop, daemon=True)
-    t.start()
-
     server = ThreadingHTTPServer((HOST, PORT), ArtServer)
     server.config = load_config()
+
+    # Initial prune on startup
+    try:
+        prune_gallery(int(server.config.get("max_images_kept", 50)))
+    except Exception:
+        pass
+
+    # Start worker thread (daemon so it dies with the process).
+    t = threading.Thread(target=worker_loop, args=(lambda: server.config,), daemon=True)
+    t.start()
     print(f"Art server on http://{HOST}:{PORT}/  (gallery: {GALLERY})")
     print("Endpoints: /generate /jobs /config /health /images + static gallery")
     try:
