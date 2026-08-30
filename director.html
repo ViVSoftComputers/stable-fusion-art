@@ -65,6 +65,7 @@
     background: transparent; border: 1px solid var(--border);
     color: var(--text); width: 36px; height: 36px; border-radius: 8px;
     cursor: pointer; font-size: 16px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
   }
   .icon-btn:hover { background: var(--bg-elev-2); }
 
@@ -134,6 +135,9 @@
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .btn:hover { background: var(--accent-dim); }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -148,8 +152,8 @@
 
   /* Gallery */
   .gallery-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 12px;
   }
   .gallery-grid .item {
     position: relative; aspect-ratio: 16/9; overflow: hidden;
@@ -172,10 +176,28 @@
   }
   .gallery-grid .item .tag {
     position: absolute; left: 6px; bottom: 6px;
-    background: rgba(0,0,0,0.65); color: white;
+    background: rgba(0,0,0,0.7); color: white;
     padding: 2px 6px; border-radius: 4px; font-size: 10px;
     backdrop-filter: blur(4px);
     pointer-events: none;
+  }
+  .gallery-grid .item .card-dl-btn {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(15, 18, 26, 0.75); color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    width: 28px; height: 28px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0;
+    transition: opacity 0.18s ease, background 0.15s ease;
+    backdrop-filter: blur(4px);
+    z-index: 2;
+  }
+  .gallery-grid .item:hover .card-dl-btn {
+    opacity: 1;
+  }
+  .gallery-grid .item .card-dl-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
   }
   .empty {
     padding: 28px; text-align: center; color: var(--text-faint);
@@ -202,7 +224,7 @@
   .scrim.open { opacity: 1; pointer-events: auto; }
   .drawer {
     position: fixed; top: 0; right: 0; bottom: 0;
-    width: 460px; max-width: 95vw; background: var(--bg-elev);
+    width: 480px; max-width: 95vw; background: var(--bg-elev);
     border-left: 1px solid var(--border);
     z-index: 20; transform: translateX(100%); transition: transform 0.22s;
     display: flex; flex-direction: column;
@@ -253,12 +275,18 @@
 
   /* Lightbox */
   .lightbox {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    position: fixed; inset: 0; background: rgba(0,0,0,0.9);
     z-index: 25; display: none; align-items: center; justify-content: center;
-    cursor: zoom-out;
+    cursor: zoom-out; flex-direction: column; gap: 12px; padding: 20px;
   }
   .lightbox.open { display: flex; }
-  .lightbox img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 8px; }
+  .lightbox img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+  .lightbox-controls {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(19, 23, 34, 0.85); padding: 8px 16px; border-radius: 30px;
+    border: 1px solid var(--border); backdrop-filter: blur(8px);
+    cursor: default;
+  }
 
   /* Fullscreen gallery mode */
   body.fullscreen-mode {
@@ -323,7 +351,7 @@
       <h2>Gallery <span class="faint mono" id="gallery-count-label">(0)</span></h2>
       <span class="faint" id="gallery-source-summary"></span>
     </div>
-    <div class="row" style="margin-bottom:10px;gap:8px">
+    <div class="row" style="margin-bottom:12px;gap:8px">
       <a class="btn tiny secondary" href="/display" target="_blank">Open Kiosk Display (Auto-Crossfade)</a>
       <a class="btn tiny secondary" href="/gallery" target="_self" id="fullscreen-link">Open Fullscreen Grid</a>
     </div>
@@ -354,7 +382,8 @@
       <label><input type="checkbox" id="cfg-enabled"> Scheduler enabled</label>
     </div>
 
-    <h2 style="margin-top:24px">Servers</h2>
+    <h2 style="margin-top:24px">Servers & Retention</h2>
+    <p class="faint" style="margin-top:0">Each server generates images and automatically prunes old files exceeding the limit.</p>
     <div id="cfg-servers"></div>
     <button class="btn secondary tiny" id="add-server-btn" style="margin-top:8px">+ Add server</button>
 
@@ -391,7 +420,14 @@
   </div>
 </aside>
 
-<div class="lightbox" id="lightbox"><img id="lightbox-img" alt=""></div>
+<div class="lightbox" id="lightbox">
+  <img id="lightbox-img" alt="" onclick="event.stopPropagation()">
+  <div class="lightbox-controls" onclick="event.stopPropagation()">
+    <span id="lightbox-label" class="faint mono" style="font-size:12px"></span>
+    <button class="btn tiny" id="lightbox-dl-btn">⬇ Download Full Image</button>
+    <button class="btn tiny secondary" id="lightbox-close-btn">Close (Esc)</button>
+  </div>
+</div>
 <div id="toast-host"></div>
 
 <script>
@@ -425,6 +461,34 @@
     $('toast-host').appendChild(el);
     setTimeout(() => el.remove(), 3500);
   };
+
+  // Download helper for full resolution files
+  async function downloadImage(url, filename) {
+    try {
+      showToast('Downloading ' + (filename || 'image') + '...', '');
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const blob = await resp.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename || url.split('/').pop() || 'stable-fusion-art.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+      showToast('Download complete', 'success');
+    } catch (e) {
+      // Fallback to direct anchor download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || url.split('/').pop() || 'stable-fusion-art.png';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  }
 
   // ---- Fast Client-Side Thumbnail Cache using Canvas ----
   const thumbCache = new Map();
@@ -483,7 +547,7 @@
     let body = null;
     const text = await r.text();
     if (text) {
-      try { body = JSON.parse(text); } catch { body = text; };
+      try { body = JSON.parse(text); } catch { body = text; }
     }
     if (!r.ok) {
       const err = new Error((body && body.error) || r.statusText);
@@ -507,22 +571,24 @@
   }
 
   function renderOverall(state) {
-    const servers = state.servers || [];
-    const online = servers.filter(s => s.status === 'online').length;
-    const anyBusy = servers.some(s => s.busy === true);
     const pill = $('overall-pill');
-    pill.className = 'pill';
-    if (online === 0) {
-      pill.classList.add('offline');
-      pill.querySelector('.label').textContent = 'all offline';
-    } else if (anyBusy) {
-      pill.classList.add('busy');
-      pill.querySelector('.label').textContent = online + ' online · busy';
+    const label = pill.querySelector('.label');
+    const count = (state.servers || []).length;
+    const online = (state.servers || []).filter(s => s.online).length;
+    if (count === 0) {
+      pill.className = 'pill offline';
+      label.textContent = 'no servers';
+    } else if (online === 0) {
+      pill.className = 'pill offline';
+      label.textContent = '0/' + count + ' online';
+    } else if (online < count) {
+      pill.className = 'pill degraded';
+      label.textContent = online + '/' + count + ' online';
     } else {
-      pill.classList.add('online');
-      pill.querySelector('.label').textContent = online + ' online';
+      pill.className = 'pill online';
+      label.textContent = online + '/' + count + ' online';
     }
-    const up = Math.floor((Date.now() / 1000) - state.started_at);
+    const up = Math.floor(state.uptime_seconds || 0);
     $('uptime-pill').textContent = 'uptime ' + fmtInterval(up);
   }
 
@@ -531,34 +597,35 @@
     $('server-count').textContent = servers.length + (servers.length === 1 ? ' server' : ' servers');
     const host = $('server-list');
     if (servers.length === 0) {
-      host.innerHTML = '<div class="empty">No servers configured. Open settings to add one.</div>';
+      host.innerHTML = '<div class="empty">No servers configured. Open Settings (⚙) to add one.</div>';
       return;
     }
-    host.innerHTML = servers.map((s, i) => {
-      const status = s.status || 'unknown';
-      const statusClass = status === 'online' ? 'online' : 'offline';
-      const busy = s.busy === true ? '<span class="pill busy"><span class="swatch"></span>busy</span>'
-                : s.busy === false ? '<span class="pill online"><span class="swatch"></span>idle</span>'
-                : '';
-      const gallery = s.gallery_count != null ? s.gallery_count : '?';
-      const queue = s.queue_depth != null ? s.queue_depth : '?';
-      const lastSeen = s.last_seen ? fmtRelative(s.last_seen) : '—';
+    host.innerHTML = servers.map((s) => {
+      let pillClass = 'offline';
+      let pillText = 'offline';
+      if (s.online) {
+        if (s.busy) {
+          pillClass = 'busy';
+          pillText = 'busy (q=' + (s.queue_depth || 0) + ')';
+        } else {
+          pillClass = 'online';
+          pillText = 'idle';
+        }
+      }
+      const label = s.name || s.base_url;
+      const latest = s.latest_image_time ? fmtRelative(s.latest_image_time) : 'none';
       return `
         <div class="server">
           <div class="row between">
-            <div>
-              <span class="name">${escapeHtml(s.name || 'Server ' + (i + 1))}</span>
-              <span class="pill ${statusClass}" style="margin-left:8px"><span class="swatch"></span>${status}</span>
-              ${busy}
-            </div>
-            <span class="mono faint">${escapeHtml(s.host || '')}</span>
+            <span class="name">${escapeHtml(label)}</span>
+            <span class="pill ${pillClass}"><span class="swatch"></span>${pillText}</span>
           </div>
-          <div class="url mono faint">${escapeHtml(s.base_url || '')}</div>
+          <div class="url mono">${escapeHtml(s.base_url)}</div>
           <div class="meta">
-            <span>images: <b>${gallery}</b></span>
-            <span>queue: <b>${queue}</b></span>
-            <span>last seen: <b>${lastSeen}</b></span>
-            ${s.error ? `<span style="color:var(--red)">error: ${escapeHtml(s.error)}</span>` : ''}
+            <span>images: <b>${s.gallery_count ?? '—'}</b></span>
+            <span>latest: <b>${latest}</b></span>
+            <span>limit: <b>${s.max_images_kept ?? 50}</b></span>
+            <span>last check: <b>${fmtRelative(s.last_checked)}</b></span>
           </div>
         </div>
       `;
@@ -567,44 +634,47 @@
 
   function renderScheduler(state) {
     const sched = state.scheduler || {};
-    const st = $('sched-status');
+    const stEl = $('sched-status');
     if (!sched.enabled) {
-      st.innerHTML = '<span class="pill"><span class="swatch"></span>disabled</span>';
+      stEl.textContent = 'disabled';
+      stEl.className = 'value faint';
     } else if (sched.in_flight) {
-      st.innerHTML = '<span class="pill busy"><span class="swatch"></span>running</span>';
+      stEl.textContent = 'generating...';
+      stEl.className = 'value';
+      stEl.style.color = 'var(--yellow)';
     } else {
-      st.innerHTML = '<span class="pill online"><span class="swatch"></span>idle</span>';
+      stEl.textContent = 'idle';
+      stEl.className = 'value';
+      stEl.style.color = 'var(--green)';
     }
     $('sched-interval').textContent = fmtInterval(sched.interval_seconds);
-    $('sched-last').textContent = sched.last_fired_at ? fmtRelative(sched.last_fired_at) : 'never';
-    if (sched.enabled && sched.next_fire_at) {
-      const remaining = Math.max(0, Math.floor(sched.next_fire_at - Date.now() / 1000));
-      $('sched-next').textContent = remaining + 's';
-    } else {
-      $('sched-next').textContent = '—';
-    }
+    $('sched-last').textContent = fmtRelative(sched.last_fired);
+    $('sched-next').textContent = sched.enabled && sched.next_fire
+      ? fmtTime(sched.next_fire) + ' (' + fmtRelative(sched.next_fire).replace(' ago', '') + ')'
+      : '—';
+    $('fire-now-btn').disabled = sched.in_flight;
   }
+
+  let activeLightboxUrl = '';
+  let activeLightboxFilename = '';
 
   function renderGallery(state) {
     const items = state.aggregated_gallery || [];
     $('gallery-count-label').textContent = '(' + items.length + ')';
+    const host = $('gallery-grid');
     if (items.length === 0) {
-      $('gallery-grid').innerHTML = '<div class="empty full" style="grid-column:1/-1">No images yet. Once a server generates art, it will appear here.</div>';
-      $('gallery-source-summary').textContent = '';
+      host.innerHTML = '<div class="empty" style="grid-column: 1 / -1">No images aggregated yet. Check server health.</div>';
       return;
     }
-    const sources = new Set(items.map(i => i.server_name || i.server));
-    $('gallery-source-summary').textContent = 'from ' + sources.size + ' server' + (sources.size === 1 ? '' : 's');
-    
-    // Only render top 40 in director dashboard for fast loading
-    const displayItems = items.slice(0, 40);
-    $('gallery-grid').innerHTML = displayItems.map((img) => {
-      const url = img.url || (img.base_url ? img.base_url.replace(/\/$/, '') + '/' + (img.file || img.name || '') : (img.server ? img.server.replace(/\/$/, '') + (img.path || '/' + (img.file || img.name || '')) : '#'));
-      const tag = img.server_name || img.server || '?';
+    host.innerHTML = items.map((img) => {
+      const url = img.url || (img.base_url ? `${img.base_url}/${img.file}` : img.file);
+      const tag = img.server_name || img.style || 'SD 1.5';
+      const filename = img.file || url.split('/').pop() || 'image.png';
       return `
-        <div class="item" data-url="${escapeAttr(url)}">
+        <div class="item" data-url="${escapeAttr(url)}" data-file="${escapeAttr(filename)}">
           <img data-src="${escapeAttr(url)}" alt="">
           <div class="tag">${escapeHtml(tag)}</div>
+          <button class="card-dl-btn" data-act="dl" data-url="${escapeAttr(url)}" data-file="${escapeAttr(filename)}" title="Download Full Image">⬇</button>
         </div>
       `;
     }).join('');
@@ -614,15 +684,34 @@
       thumbObserver.observe(img);
     });
 
+    // Wire individual download buttons
+    document.querySelectorAll('.gallery-grid .card-dl-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        downloadImage(btn.dataset.url, btn.dataset.file);
+      });
+    });
+
     // Wire lightbox to load full-res image on click
     document.querySelectorAll('.gallery-grid .item').forEach(el => {
       el.addEventListener('click', () => {
-        const url = el.dataset.url;
-        $('lightbox-img').src = url;
+        activeLightboxUrl = el.dataset.url;
+        activeLightboxFilename = el.dataset.file;
+        $('lightbox-img').src = activeLightboxUrl;
+        $('lightbox-label').textContent = activeLightboxFilename;
         $('lightbox').classList.add('open');
       });
     });
   }
+
+  $('lightbox-dl-btn').addEventListener('click', () => {
+    if (activeLightboxUrl) {
+      downloadImage(activeLightboxUrl, activeLightboxFilename);
+    }
+  });
+  $('lightbox-close-btn').addEventListener('click', () => {
+    $('lightbox').classList.remove('open');
+  });
 
   function renderRecentJobs(state) {
     const jobs = (state.scheduler && state.scheduler.recent_jobs) || [];
@@ -707,9 +796,15 @@
           <label>Base URL</label>
           <input type="text" data-field="base_url" value="${escapeAttr(s.base_url || '')}" placeholder="http://192.168.1.10:8090">
         </div>
-        <div class="field">
-          <label>Auth token (optional)</label>
-          <input type="password" data-field="auth_token" value="${escapeAttr(s.auth_token || '')}" placeholder="Bearer token if server has auth_token set">
+        <div class="field-row">
+          <div class="field">
+            <label>Max Images Kept (Retention limit)</label>
+            <input type="number" data-field="max_images_kept" min="1" max="1000" step="1" value="${escapeAttr(s.max_images_kept || 50)}">
+          </div>
+          <div class="field">
+            <label>Auth token (optional)</label>
+            <input type="password" data-field="auth_token" value="${escapeAttr(s.auth_token || '')}" placeholder="Bearer token">
+          </div>
         </div>
       </div>
     `).join('');
@@ -727,7 +822,11 @@
         const i = parseInt(row.dataset.i, 10);
         const field = t.dataset.field;
         if (field) {
-          editingConfig.servers[i][field] = t.value;
+          if (field === 'max_images_kept') {
+            editingConfig.servers[i][field] = parseInt(t.value, 10) || 50;
+          } else {
+            editingConfig.servers[i][field] = t.value;
+          }
         }
       });
     });
@@ -747,6 +846,19 @@
     editingConfig.generation.params.height = parseInt($('cfg-gen-height').value, 10);
     editingConfig.generation.prompt_pool = $('cfg-gen-prompts').value
       .split('\n').map(s => s.trim()).filter(Boolean);
+    
+    // Push updated max_images_kept to individual servers if reachable
+    if (Array.isArray(editingConfig.servers)) {
+      editingConfig.servers.forEach((s, idx) => {
+        if (s.max_images_kept) {
+          api('/api/director/servers/' + idx + '/config', {
+            method: 'PUT',
+            body: JSON.stringify({ max_images_kept: parseInt(s.max_images_kept, 10) || 50 })
+          }).catch(() => {});
+        }
+      });
+    }
+
     api('/api/director/config', {
       method: 'PUT',
       body: JSON.stringify(editingConfig),
@@ -770,13 +882,18 @@
   $('add-server-btn').addEventListener('click', () => {
     if (!editingConfig) return;
     editingConfig.servers = editingConfig.servers || [];
-    editingConfig.servers.push({ name: 'Server ' + (editingConfig.servers.length + 1), base_url: '', auth_token: '' });
+    editingConfig.servers.push({ name: 'Server ' + (editingConfig.servers.length + 1), base_url: '', auth_token: '', max_images_kept: 50 });
     renderServerEditor(editingConfig.servers);
   });
   $('fire-now-btn').addEventListener('click', () => {
-    api('/api/director/trigger', { method: 'POST' })
-      .then(() => { showToast('Fired', 'success'); refresh(); })
-      .catch((e) => showToast('Trigger failed: ' + e.message, 'error'));
+    api('/api/director/trigger', { method: 'POST' })\n      .then(() => { showToast('Fired', 'success'); refresh(); })\n      .catch((e) => showToast('Trigger failed: ' + e.message, 'error'));
+  });
+
+  // ---- Keyboard shortcuts ----
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('lightbox').classList.contains('open')) {
+      $('lightbox').classList.remove('open');
+    }
   });
 
   // ---- Fullscreen gallery mode ----
