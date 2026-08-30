@@ -132,7 +132,7 @@ Full contract in [`API.md`](API.md). Summary:
 
 ## Configuration
 
-### `director_config.json`
+### `director_config.json` (gitignored)
 
 ```json
 {
@@ -143,6 +143,9 @@ Full contract in [`API.md`](API.md). Summary:
   "poll": { "health_interval_seconds": 10, "gallery_interval_seconds": 30 }
 }
 ```
+
+`director_config.json` is **not committed** — it holds machine-specific settings
+and the server `auth_token`, so it's excluded via `.gitignore`.
 
 ### `server_config.json` (gitignored)
 

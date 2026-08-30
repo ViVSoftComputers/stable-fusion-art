@@ -30,3 +30,4 @@ Thumbs.db
 # Assets from SD pipeline (downloaded models)
 models/
 server_config.json
+director_config.json
