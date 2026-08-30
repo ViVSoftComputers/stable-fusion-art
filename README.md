@@ -5,6 +5,8 @@ Stable Diffusion 1.5 on a schedule, a director orchestrates one or more servers,
 and the results are shown in a browser gallery and a fullscreen wall-display
 kiosk.
 
+**By [ViVSoft Computers LLC](https://www.vivsoft.live) · [LoRa Mesh Devices](https://hub.lorameshdevices.com/)** · MIT License
+
 ```
                     ┌─────────────────────────────────────────────┐
                     │                director.py                   │
@@ -193,3 +195,7 @@ Environment variables:
   environment (see the `ART_PYTHON` note above).
 - **Optional**: `convert_to_raw.py` needs Pillow if you use the raw RGB565
   output for an embedded wall panel.
+
+## License
+
+[MIT](LICENSE) © 2026 ViVSoft Computers LLC
