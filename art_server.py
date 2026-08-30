@@ -366,6 +366,8 @@ class ArtServer(BaseHTTPRequestHandler):
                 "height": req.get("height", cfg.get("height", 448)),
             }
             job_id = uuid.uuid4().hex[:12]
+            print(f"[generate] {time.strftime('%Y-%m-%d %H:%M:%S')} from={self.client_address[0]} "
+                  f"prompt={prompt[:40]!r} {params['width']}x{params['height']}", flush=True)
             job = {
                 "id": job_id,
                 "status": "queued",
